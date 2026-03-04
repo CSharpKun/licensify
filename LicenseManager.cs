@@ -8,7 +8,8 @@ namespace Licensify;
 
 public interface ILicenseManager
 {
-    Task<int> ListSPDXLicenses(ParseResult result, CancellationToken token);
+    Task<int> ListSPDXLicenses(CancellationToken token);
+    Task<int> ShowLicense(string? licenseId, CancellationToken token);
 }
 
 public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, HttpClient client) : ILicenseManager
@@ -17,7 +18,7 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
 
     [UnconditionalSuppressMessage("Trimming", "IL2026")]
     [UnconditionalSuppressMessage("AOT", "IL3050")]
-    public async Task<int> ListSPDXLicenses(ParseResult result, CancellationToken token)
+    public async Task<int> ListSPDXLicenses(CancellationToken token)
     {
         var response = await client.GetAsync(SPDX_LICENSES_LIST, token);
         var islogErrorEnabled = logger.IsEnabled(LogLevel.Error);
@@ -37,16 +38,16 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
             return 1;
         }
 
-        var table = new Table();
+        var table = new Table().RoundedBorder().Title("SPDX Licenses");
         
         var tableData = manifest.Licenses
             .Where(license => license.IsDeprecated is false)
             .OrderBy(license => license.Name);
 
         table.AddColumns(
-            nameof(LicenseListEntry.Name), 
-            nameof(LicenseListEntry.LicenseId), 
-            nameof(LicenseListEntry.DetailsUrl)
+            new TableColumn(nameof(LicenseListEntry.Name)), 
+            new TableColumn(nameof(LicenseListEntry.LicenseId)).NoWrap(), 
+            new TableColumn(nameof(LicenseListEntry.DetailsUrl)).NoWrap()
         );
 
         foreach (var entry in tableData)
@@ -60,6 +61,12 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
 
         AnsiConsole.Write(table);
 
+        return 0;
+    }
+
+    public async Task<int> ShowLicense(string? licenseId, CancellationToken token)
+    {
+        if (licenseId is null) return 1;
         return 0;
     }
 }

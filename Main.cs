@@ -1,12 +1,12 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Console;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
-using System.CommandLine;
+using System.Text.Json.Serialization;
 using System.Text.Json;
-using Licensify;
+using System.CommandLine;
 using System.Reflection;
+using Licensify;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -29,25 +29,32 @@ builder.Services.AddLogging(logging =>
 .AddSingleton<ILicenseManager, LicenseManager>()
 .AddSingleton(provider =>
 {
-    HttpClient client = new()
+    var client = new HttpClient()
     {
         BaseAddress = new Uri("https://spdx.org/licenses/"),
         Timeout = TimeSpan.FromSeconds(30)
     };
-    client.DefaultRequestHeaders.Add("User-Agent", $"Licensify/{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}");
+    var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+    client.DefaultRequestHeaders.Add("User-Agent", $"Licensify/{version ?? "0.0.0"}");
     return client;    
 });
 
 
 using var host = builder.Build();
-var services = host.Services;
+var licenseManager = host.Services.GetRequiredService<ILicenseManager>();
 
-RootCommand rootCommand = new("SPDX Client that can automatically manage LICENSE files.");
+var rootCommand = new RootCommand("SPDX Client that can automatically manage LICENSE files.");
+var commands = rootCommand.Subcommands;
 
-Command listCommand = new("list", "Lists all SPDX Licenses");
-rootCommand.Subcommands.Add(listCommand);
+var listCommand = new Command("list", "Lists all SPDX Licenses");
+listCommand.SetAction((res, token) => licenseManager.ListSPDXLicenses(token));
+commands.Add(listCommand);
 
-listCommand.SetAction(services.GetRequiredService<ILicenseManager>().ListSPDXLicenses);
+var showCommand = new Command("show", "Shows information about specified license.");
+var licenseArgument = new Argument<string>("licenseId") { Description = "License's Id." };
+showCommand.Arguments.Add(licenseArgument);
+showCommand.SetAction((res, token) => licenseManager.ShowLicense(res.GetValue(licenseArgument), token));
+commands.Add(showCommand);
 
 return await rootCommand.Parse(args).InvokeAsync();
 
