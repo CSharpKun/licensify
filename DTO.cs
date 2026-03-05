@@ -9,7 +9,7 @@ public record LicenseListManifest(
 
 public record LicenseListEntry(
     string Reference,
-    [property: JsonPropertyName("isDeprecatedLicenseId")] bool IsDeprecated,
+    bool IsDeprecatedLicenseId,
     string DetailsUrl,
     int ReferenceNumber,
     string Name,
