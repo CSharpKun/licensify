@@ -26,6 +26,7 @@ builder.Services.AddLogging(logging =>
     ReferenceHandler = ReferenceHandler.IgnoreCycles,
     TypeInfoResolver = LicensifyJsonSerializerContext.Default
 })
+.AddSingleton<ILicenseDatabase, JsonLicenseDatabase>()
 .AddSingleton<ILicenseManager, LicenseManager>()
 .AddSingleton(provider =>
 {
@@ -46,15 +47,29 @@ var licenseManager = host.Services.GetRequiredService<ILicenseManager>();
 var rootCommand = new RootCommand("SPDX Client that can automatically manage LICENSE files.");
 var commands = rootCommand.Subcommands;
 
+var licenseArgument = new Argument<string>("licenseId") { Description = "License's Id." };
+
+var repoOption = new Option<string>("--repo", "-r")
+    {
+        Description = "Repository's path.",
+        DefaultValueFactory = _ => "."
+    };
+
 var listCommand = new Command("list", "Lists all SPDX Licenses");
-listCommand.SetAction((res, token) => licenseManager.ListSPDXLicenses(token));
+listCommand.SetAction((res, token) => licenseManager.ListLicenses(token));
 commands.Add(listCommand);
 
 var showCommand = new Command("show", "Shows information about specified license.");
-var licenseArgument = new Argument<string>("licenseId") { Description = "License's Id." };
 showCommand.Arguments.Add(licenseArgument);
+showCommand.Aliases.Add("get");
 showCommand.SetAction((res, token) => licenseManager.ShowLicense(res.GetValue(licenseArgument), token));
 commands.Add(showCommand);
+
+var addCommand = new Command("add", "Adds specified license to the specified project.");
+addCommand.Arguments.Add(licenseArgument);
+addCommand.Options.Add(repoOption);
+addCommand.SetAction((res, token) => licenseManager.AddLicense(res.GetValue(licenseArgument), res.GetValue(repoOption), token));
+commands.Add(addCommand);
 
 return await rootCommand.Parse(args).InvokeAsync();
 

@@ -1,28 +1,29 @@
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.InteropServices;
+using System.Linq.Expressions;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Spectre.Console;
 using Spectre.Console.Extensions;
-using Spectre.Console.Json;
 using Spectre.Console.Rendering;
 
 namespace Licensify;
 
 public interface ILicenseManager
 {
-    Task<int> ListSPDXLicenses(CancellationToken token);
+    Task<int> ListLicenses(CancellationToken token);
     Task<int> ShowLicense(string? licenseId, CancellationToken token);
+    Task<int> AddLicense(string? licenseId, string? repoPath, CancellationToken token);
 }
 
-public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, HttpClient client) : ILicenseManager
+public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, ILicenseDatabase database, HttpClient client) : ILicenseManager
 {
-    private bool IsErrorEnabled { get; set; } = logger.IsEnabled(LogLevel.Error);
+    private bool IsErrorEnabled { get; } = logger.IsEnabled(LogLevel.Error);
     private const string SPDX_LICENSES_LIST = "licenses.json";
 
     [UnconditionalSuppressMessage("Trimming", "IL2026")]
     [UnconditionalSuppressMessage("AOT", "IL3050")]
-    public async Task<int> ListSPDXLicenses(CancellationToken token)
+    public async Task<int> ListLicenses(CancellationToken token)
     {
         var response = await client.GetAsync(SPDX_LICENSES_LIST, token).Spinner(Spinner.Known.Dots);
 
@@ -41,7 +42,7 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
             return 1;
         }
 
-        var table = new Table().RoundedBorder().ShowRowSeparators().Title("SPDX Licenses");
+        var table = new Table().RoundedBorder().Title("SPDX Licenses");
         
         var tableData = manifest.Licenses
             .Where(license => license.IsDeprecatedLicenseId is false)
@@ -73,22 +74,33 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
     {
         if (licenseId is null) return 1;
 
-        var response = await client.GetAsync(licenseId + ".json", token).Spinner(Spinner.Known.Dots);
-        
-        if (!response.IsSuccessStatusCode)
+        LicenseEntry? entry = null;
+
+        try
         {
-            if (IsErrorEnabled) logger.LogError("Failed to fetch license {LicenseId}", licenseId);
+            entry = await database.GetLicense(licenseId, token);  
+        } 
+        catch (HttpRequestException)
+        {
+            AnsiConsole.Markup($"Couldn't find license");
+            return 1;
+        }
+        catch (JsonException ex)
+        {
+            AnsiConsole.WriteException(ex);
+            AnsiConsole.Markup($"Couldn't parse license");
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.WriteException(ex);
             return 1;
         }
 
-        var json = await response.Content.ReadAsStringAsync(token).Spinner(Spinner.Known.Dots);
-        var entry = JsonSerializer.Deserialize<LicenseEntry>(json, options);
-
         if (entry is null)
         {
-            if (IsErrorEnabled) logger.LogError("Failed to deserialize license {LicenseId}", licenseId);
-            return 1;
-        }    
+            return 1;   
+        }
 
         var renderList = new List<IRenderable>
         {
@@ -123,5 +135,12 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
 
         return 0;
     } 
+
+    public async Task<int> AddLicense(string? licenseId, string? repoPath, CancellationToken token)
+    {
+        
+        return 0;
+    }
+
     private static string GetStatusColorTag(bool condition, bool reverse = false) => condition ^ reverse ? "[green]" : "[red]";
 }
