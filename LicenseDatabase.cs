@@ -1,19 +1,18 @@
-using System.Buffers.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
-using System.Text.Unicode;
 using Microsoft.Extensions.Logging;
 
 namespace Licensify;
 
 public interface ILicenseDatabase
 {
-    Task<LicenseEntry> GetLicense(string licenseId, CancellationToken token);
-    Task<LicenseListManifest> GetLicensesList(CancellationToken token);
+    Task<LicenseEntry?> GetLicense(string licenseId, CancellationToken token = default);
+    Task<LicenseListManifest?> GetLicensesList(CancellationToken token);
 }
 
+[UnconditionalSuppressMessage("Trimming", "IL2026")]
+[UnconditionalSuppressMessage("AOT", "IL3050")]
 public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions options, ILogger<JsonLicenseDatabase> logger) : ILicenseDatabase
 {
     private static string ApplicationFolder { get; } = 
@@ -22,67 +21,123 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
         Assembly.GetEntryAssembly()?.GetName()?.Name ?? "licensify"
     );
 
-    private static FileInfo CacheFile { get; } = new(
+    private static string LicensesCacheFile { get; } =
         Path.Combine(
             ApplicationFolder,
-            "cache.json"
-        )
-    );
+            "licensesCache.json"
+        );
+
+    private static string ManifestCacheFile { get; } =
+        Path.Combine(
+           ApplicationFolder,
+            "manifestCache.json"
+        );
 
     private bool IsErrorEnabled { get; } = logger.IsEnabled(LogLevel.Error);
+    private const string SPDX_LICENSES_LIST = "licenses.json";
 
-    [UnconditionalSuppressMessage("Trimming", "IL2026")]
-    [UnconditionalSuppressMessage("AOT", "IL3050")]
-    public async Task<LicenseEntry> GetLicense(string licenseId, CancellationToken token)
+    public async Task<LicenseEntry?> GetLicense(string licenseId, CancellationToken token = default)
     {
-        Directory.CreateDirectory(ApplicationFolder);
-        using var file = CacheFile.Open(FileMode.OpenOrCreate);
+        Dictionary<string, LicenseEntry>? dict = [];
 
-        Dictionary<string, LicenseEntry> dict = [];
+        LicenseEntry? license = default;
 
         try
         {
-            dict = await JsonSerializer.DeserializeAsync<Dictionary<string, LicenseEntry>>(file, options, token) ?? []; 
+            license = await GetJsonRequest<LicenseEntry>(licenseId + ".json", token);   
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "message");
+        }
+
+        if (!TryGetFromCache(LicensesCacheFile, out dict))
+        {
+            if (IsErrorEnabled) logger.LogError("d");
+            dict = [];
+        }
+
+        if (license is not null)
+        {
+            dict?.Add(licenseId, license);
+            WriteToCache(LicensesCacheFile, dict!);
+            return license;
+        }
+
+        if ((dict?.TryGetValue(licenseId, out license) ?? false) && logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Using local copy of license {License}", licenseId);
+        }
+
+        return license;
+    }
+
+    public async Task<LicenseListManifest?> GetLicensesList(CancellationToken token)
+    {
+        LicenseListManifest? manifest = default;
+
+        try
+        {
+            manifest = await GetJsonRequest<LicenseListManifest>(SPDX_LICENSES_LIST, token);   
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "message");
+        }
+
+        if (manifest is not null)
+        {
+            WriteToCache(ManifestCacheFile, manifest);
+            return manifest;
+        }
+
+        if (TryGetFromCache(ManifestCacheFile, out manifest) && logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("Using local copy of manifest: {Version}", manifest?.Version);
+        }
+
+        return manifest;
+    }
+
+    private bool TryGetFromCache<T>(string filePath, out T? result)
+    {
+        Directory.CreateDirectory(ApplicationFolder);
+        var json = File.ReadAllText(filePath);
+
+        try
+        {
+            result = JsonSerializer.Deserialize<T>(json, options); 
+            return true;
         }   
         catch (JsonException ex)
         {
             if (IsErrorEnabled) logger.LogError(ex, "message"); // todo
-        }
-
-        if (dict.TryGetValue(licenseId, out var localLicense)) 
-        {
-            if (logger.IsEnabled(LogLevel.Information)) logger.LogInformation("Used local copy of license {LicenseId}", licenseId);
-            return localLicense; 
+            result = default;
+            return false;
         }   
+    }
 
-        var response = await client.GetAsync(licenseId + ".json", token);
+    private void WriteToCache(string filePath, object obj) => File.WriteAllText(filePath, JsonSerializer.Serialize(obj, options));
+
+    private async Task<T> GetJsonRequest<T>(string url, CancellationToken token)
+    {
+        var response = await client.GetAsync(url, token);
 
         if (!response.IsSuccessStatusCode)
         {
-            if (IsErrorEnabled) logger.LogError("Failed to fetch license {LicenseId}", licenseId);
+            if (IsErrorEnabled) logger.LogError("Failed to fetch {Url}", url);
             throw new HttpRequestException();
         }
         
         var responseJson = await response.Content.ReadAsStringAsync(token);
-        var remoteLicense = JsonSerializer.Deserialize<LicenseEntry>(responseJson, options);
+        var data = JsonSerializer.Deserialize<T>(responseJson, options);
 
-        if (remoteLicense is null)
+        if (data is null)
         {
-            if (IsErrorEnabled) logger.LogError("Failed to deserialize license {LicenseId}", licenseId);
+            if (IsErrorEnabled) logger.LogError("Failed to deserialize data from {Url} with contents {Contents}", url, responseJson);
             throw new JsonException();
         }
 
-        dict.Add(licenseId, remoteLicense);
-        var encodedFileJson = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dict, options));
-
-        file.SetLength(0);
-        file.Write(encodedFileJson, 0, encodedFileJson.Length);   
-
-        return remoteLicense;
-    }
-
-    public async Task<LicenseListManifest> GetLicensesList(CancellationToken token)
-    {
-        return new(null, null);
+        return data;
     }
 }

@@ -19,26 +19,18 @@ public interface ILicenseManager
 public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, ILicenseDatabase database, HttpClient client) : ILicenseManager
 {
     private bool IsErrorEnabled { get; } = logger.IsEnabled(LogLevel.Error);
-    private const string SPDX_LICENSES_LIST = "licenses.json";
+    
 
     [UnconditionalSuppressMessage("Trimming", "IL2026")]
     [UnconditionalSuppressMessage("AOT", "IL3050")]
     public async Task<int> ListLicenses(CancellationToken token)
     {
-        var response = await client.GetAsync(SPDX_LICENSES_LIST, token).Spinner(Spinner.Known.Dots);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            if (IsErrorEnabled) logger.LogError("Failed to fetch SPDX licenses from {BaseUri}{Uri}", client.BaseAddress, SPDX_LICENSES_LIST);
-            return 1;
-        }
-
-        var json = await response.Content.ReadAsStringAsync(token).Spinner(Spinner.Known.Dots);
-        var manifest = JsonSerializer.Deserialize<LicenseListManifest>(json, options);
+        var manifest = await database.GetLicensesList(token);
 
         if (manifest is null)
         {
-            if (IsErrorEnabled) logger.LogError("Failed to deserialize SPDX licenses manifest");
+            if (IsErrorEnabled) logger.LogError("ds");
+            AnsiConsole.Markup("ds");
             return 1;
         }
 
@@ -85,14 +77,14 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
             AnsiConsole.Markup($"Couldn't find license");
             return 1;
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            AnsiConsole.WriteException(ex);
             AnsiConsole.Markup($"Couldn't parse license");
             return 1;
         }
         catch (Exception ex)
         {
+            logger.LogCritical(ex, "message"); // todo
             AnsiConsole.WriteException(ex);
             return 1;
         }
