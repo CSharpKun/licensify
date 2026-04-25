@@ -8,7 +8,7 @@ namespace Licensify;
 public interface ILicenseDatabase
 {
     Task<LicenseEntry?> GetLicense(string licenseId, CancellationToken token = default);
-    Task<LicenseListManifest?> GetLicensesList(CancellationToken token);
+    Task<LicenseListManifest?> GetLicensesList(CancellationToken token = default);
 }
 
 [UnconditionalSuppressMessage("Trimming", "IL2026")]

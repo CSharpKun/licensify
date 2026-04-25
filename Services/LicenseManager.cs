@@ -16,7 +16,7 @@ public interface ILicenseManager
     Task<int> AddLicense(string? licenseId, string? repoPath, CancellationToken token);
 }
 
-public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, ILicenseDatabase database, HttpClient client) : ILicenseManager
+public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManager> logger, ILicenseDatabase database) : ILicenseManager
 {
     private bool IsErrorEnabled { get; } = logger.IsEnabled(LogLevel.Error);
     
@@ -25,37 +25,7 @@ public class LicenseManager(JsonSerializerOptions options, ILogger<LicenseManage
     [UnconditionalSuppressMessage("AOT", "IL3050")]
     public async Task<int> ListLicenses(CancellationToken token)
     {
-        var manifest = await database.GetLicensesList(token);
-
-        if (manifest is null)
-        {
-            if (IsErrorEnabled) logger.LogError("ds");
-            AnsiConsole.Markup("ds");
-            return 1;
-        }
-
-        var table = new Table().RoundedBorder().Title("SPDX Licenses");
         
-        var tableData = manifest.Licenses
-            .Where(license => license.IsDeprecatedLicenseId is false)
-            .OrderBy(license => license.Name);
-
-        table.AddColumns(
-            new TableColumn(nameof(LicenseListEntry.Name)), 
-            new TableColumn(nameof(LicenseListEntry.LicenseId)).NoWrap(), 
-            new TableColumn(nameof(LicenseListEntry.DetailsUrl)).NoWrap()
-        );
-
-        foreach (var entry in tableData)
-        {
-            table.AddRow(
-                entry.Name,
-                entry.LicenseId,
-                entry.DetailsUrl.Replace(".json", ".html")
-            );
-        }
-
-        AnsiConsole.Write(table);
 
         return 0;
     }
