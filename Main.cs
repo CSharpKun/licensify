@@ -1,14 +1,17 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Text.Json.Serialization;
-using System.Text.Json;
+using System.Net.Http.Headers;
 using System.Reflection;
-using Licensify.Services;
+using System.Text.Json;
 using DotMake.CommandLine;
 using Licensify.Commands;
-using System.Net.Http.Headers;
+using Licensify.Services;
 using Licensify;
-using System.Net.Sockets;
+
+var rootCommand = Cli.Parse<RootCommand>().Bind<RootCommand>();
+
+CliGlobalSettings globalSettings = new(rootCommand.Verbose, rootCommand.NoCache);
 
 Cli.Ext.ConfigureServices(services =>
     services.AddSingleton<JsonSerializerOptions>(_ => new()
@@ -18,16 +21,22 @@ Cli.Ext.ConfigureServices(services =>
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
         TypeInfoResolver = LicensifyJsonSerializerContext.Default
     })
-    .AddSingleton<RootCommand>()
+    .AddSingleton(globalSettings)
     .AddSingleton<ILicenseDatabase, JsonLicenseDatabase>()
     .AddHttpClient("spdx", client =>
     {
-        client.BaseAddress = new("https://spdx.org/licenses/");
         client.Timeout = TimeSpan.FromSeconds(30);
+        client.BaseAddress = new("https://spdx.org/licenses/");
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
         var clientInfo = new ProductInfoHeaderValue("Licensify", version);
         client.DefaultRequestHeaders.UserAgent.Add(clientInfo);
-        client.DefaultRequestHeaders.AcceptEncoding.Clear();
+    }).Services.AddHttpClient("github", client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+        client.BaseAddress = new("https://raw.githubusercontent.com/spdx/license-list-data/main/json/");
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
+        var clientInfo = new ProductInfoHeaderValue("Licensify", version);
+        client.DefaultRequestHeaders.UserAgent.Add(clientInfo);
     })
 );
 

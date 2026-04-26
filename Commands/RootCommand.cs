@@ -10,4 +10,19 @@ public class RootCommand
 {
     [CliOption(Description = "Enable verbose logging")]
     public bool Verbose { get; set; }
+
+    [CliOption(Description = "Force download and update for operation")]
+    public bool NoCache { get; set; }
+
+    [CliOption(
+        Description = "Custom SPDX repository URL",
+        Group = "Repository"
+    )]
+    public Uri? CustomRepo { get; set; }
+
+    [CliOption(
+        Description = "Use SPDX official repo",
+        Group = "Repository"
+    )]
+    public bool UseSPDX { get; set; }
 }

@@ -2,6 +2,11 @@ using System.Text.Json.Serialization;
 
 namespace Licensify;
 
+public record CliGlobalSettings(
+    bool Verbose,
+    bool ForceNoCache
+);
+
 public record LicenseListManifest(
     [property: JsonPropertyName("licenseListVersion")] string Version,
     IReadOnlyList<LicenseListEntry> Licenses

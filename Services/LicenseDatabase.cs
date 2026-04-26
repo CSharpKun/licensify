@@ -1,8 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
-using Licensify.Commands;
-using Microsoft.Extensions.Logging;
 using Spectre.Console;
 
 namespace Licensify.Services;
@@ -15,7 +13,7 @@ public interface ILicenseDatabase
 
 [UnconditionalSuppressMessage("Trimming", "IL2026")]
 [UnconditionalSuppressMessage("AOT", "IL3050")]
-public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, RootCommand root) : ILicenseDatabase
+public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, CliGlobalSettings settings) : ILicenseDatabase
 {
     private static string ApplicationFolder { get; } = 
     Path.Combine(
@@ -36,68 +34,66 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         );
 
     private const string SPDX_LICENSES_LIST = "licenses.json";
-    private readonly HttpClient _client = httpFactory.CreateClient("spdx");
-    private readonly bool _verbose = true; //root.Verbose;
 
     public async Task<LicenseEntry?> GetLicense(string licenseId, CancellationToken token = default)
     {
-        Dictionary<string, LicenseEntry>? dict = [];
+        if (!TryGetFromCache(LicensesCacheFile, out Dictionary<string, LicenseEntry>? dict)) dict = [];
 
-        LicenseEntry? license = default;
+        LicenseEntry? license = null;
+
+        var gotFromDict = dict?.TryGetValue(licenseId, out license) ?? false;
+
+        if (gotFromDict && !settings.ForceNoCache)
+        {
+            if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Using local copy of the license {licenseId}[/]");
+            return license;
+        } 
 
         try
         {
-            license = await GetJsonRequest<LicenseEntry>(licenseId + ".json", token);   
+            license = await GetJsonRequest<LicenseEntry>(licenseId + ".json", "github", token);   
         }
         catch (HttpRequestException ex)
         {
             AnsiConsole.WriteException(ex);
         }
 
-        if (!TryGetFromCache(LicensesCacheFile, out dict))
+        if (license is not null && (dict?.TryGetValue(licenseId, out var _) ?? false))
         {
-            dict = [];
-        }
-
-        if (license is not null)
-        {
-            dict?.Add(licenseId, license);
+            dict[licenseId] = license;
             WriteToCache(LicensesCacheFile, dict!);
-            return license;
         }
-
-        var gotFromDict = dict?.TryGetValue(licenseId, out license) ?? false;
-
-        if (gotFromDict && _verbose) AnsiConsole.Markup("[grey]Using local copy of the license {License}[/]", licenseId);
 
         return license;
     }
 
     public async Task<LicenseListManifest?> GetLicensesList(CancellationToken token)
     {
-        var manifest = await GetJsonRequest<LicenseListManifest>(SPDX_LICENSES_LIST, token);   
+        var gotFromCache = TryGetFromCache(ManifestCacheFile, out LicenseListManifest? manifest);
 
-        if (manifest is not null)
+        if (gotFromCache && !settings.ForceNoCache) 
         {
-            WriteToCache(ManifestCacheFile, manifest);
+            if (settings.Verbose) AnsiConsole.MarkupLine("[grey]Using a local copy of the license list[/]");
             return manifest;
         }
+        
+        manifest = await GetJsonRequest<LicenseListManifest>(SPDX_LICENSES_LIST, "github", token);   
 
-        var gotFromCache = TryGetFromCache(ManifestCacheFile, out manifest);
-
-        if (gotFromCache && _verbose) AnsiConsole.Markup("[grey]Using local copy of the licenses' list[/]");
-
+        if (manifest is not null) WriteToCache(ManifestCacheFile, manifest);
+        
         return manifest;
     }
 
     private bool TryGetFromCache<T>(string filePath, out T? result)
     {
         Directory.CreateDirectory(ApplicationFolder);
-        if (!File.Exists(filePath))
+        var isFileOld = File.GetLastWriteTime(filePath) < DateTime.Now - TimeSpan.FromHours(10);
+        if (!File.Exists(filePath) || isFileOld)
         {
             result = default;
             return false;
         } 
+
         var json = File.ReadAllText(filePath);
 
         try
@@ -115,18 +111,19 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
 
     private void WriteToCache(string filePath, object obj) => File.WriteAllText(filePath, JsonSerializer.Serialize(obj, options));
 
-    private async Task<T?> GetJsonRequest<T>(string url, CancellationToken token)
+    private async Task<T?> GetJsonRequest<T>(string url, string clientName, CancellationToken token)
     {
         HttpResponseMessage? response = null;
+        var client = httpFactory.CreateClient(clientName);
         try
         {
-            response = await _client.GetAsync(url);    
+            response = await client.GetAsync(url, token);    
         }
         catch (TaskCanceledException ex) when (!token.IsCancellationRequested)
         {
-            if (_verbose)
+            if (settings.Verbose)
             {
-                AnsiConsole.Markup($"[red]Fetch to url {url} failed because of the timeout[/]");
+                AnsiConsole.MarkupLine($"[red]Fetch to url {url} failed because of the timeout[/]");
                 AnsiConsole.WriteException(ex);  
             } 
             return default;
@@ -136,14 +133,14 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
 
         if (!response.IsSuccessStatusCode)
         {
-            if (_verbose) AnsiConsole.Markup("[red]Failed to fetch {Url}[/]", url);
+            if (settings.Verbose) AnsiConsole.MarkupLine("[red]Failed to fetch {Url}[/]", url);
             return default;
         }
         
         var responseJson = await response.Content.ReadAsStringAsync(token);
         var data = JsonSerializer.Deserialize<T>(responseJson, options);
 
-        if (data is null && _verbose) AnsiConsole.Markup("[red]Failed to deserialize data from {Url} with contents {Contents}[/]", url, responseJson);
+        if (data is null && settings.Verbose) AnsiConsole.MarkupLine("[red]Failed to deserialize data from {Url} with contents {Contents}[/]", url, responseJson);
 
         return data;
     }

@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Licensify": {
+      "commandName": "Project",
+      "commandLineArgs": "--verbose list"
+    }
+  }
+}
