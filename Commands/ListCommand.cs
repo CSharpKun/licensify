@@ -1,10 +1,11 @@
 using DotMake.CommandLine;
+using Licensify.Services;
 using Spectre.Console;
 
 namespace Licensify.Commands;
 
 [CliCommand(
-    Description = "SPDX Client that can automatically manage LICENSE files."
+    Description = "Lists all licenses in a table."
 )]
 public class ListCommand(ILicenseDatabase database)
 {
@@ -14,7 +15,7 @@ public class ListCommand(ILicenseDatabase database)
 
         if (manifest is null)
         {
-            AnsiConsole.Markup("ds");
+            AnsiConsole.Markup("[bold red]Couldn't get list of licenses. Check your internet connection.[/]");
             return;
         }
 

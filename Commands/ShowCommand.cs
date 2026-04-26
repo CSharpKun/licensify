@@ -1,4 +1,8 @@
+using System.Text.Json;
 using DotMake.CommandLine;
+using Licensify.Services;
+using Spectre.Console;
+using Spectre.Console.Rendering;
 
 namespace Licensify.Commands;
 
@@ -6,13 +10,63 @@ namespace Licensify.Commands;
     Description = "Shows information about specified license.",
     Alias = "get"
 )]
-public class ShowCommand
+public class ShowCommand(ILicenseDatabase database)
 {
     [CliArgument(Description = "License's short id.", Required = true)]
     public string LicenseId { get; set; } = null!;
 
     public async Task RunAsync()
     {
-        
+        LicenseEntry? entry = null;
+
+        try
+        {
+            entry = await database.GetLicense(LicenseId);  
+        } 
+        catch (HttpRequestException)
+        {
+            AnsiConsole.Markup($"Couldn't find license");
+            return;
+        }
+        catch (JsonException)
+        {
+            AnsiConsole.Markup($"Couldn't parse license");
+            return;
+        }
+
+        if (entry is null) return;   
+
+        var renderList = new List<IRenderable>
+        {
+            new Panel(entry.LicenseText)
+            {
+                Border = BoxBorder.Double
+            },
+            new Markup($"Deprecated License Id: {GetStatusColorTag(entry.IsDeprecatedLicenseId, reverse: true) + entry.IsDeprecatedLicenseId}[/]"),
+            new Markup($"Osi Approved: {GetStatusColorTag(entry.IsOsiApproved) + entry.IsOsiApproved}[/]")
+        };
+
+        foreach (var reference in entry.CrossRef)
+        {
+            renderList.Add(new Panel(
+                new Rows(
+                    new Markup($"[bold]Reference URL:[/] [link]{reference.Url}[/]"),
+                    new Markup($"[bold]Live:[/] {GetStatusColorTag(reference.IsLive) + reference.IsLive}[/]"),
+                    new Markup($"[bold]Valid:[/] {GetStatusColorTag(reference.IsValid) + reference.IsValid}[/]"),
+                    new Markup($"[bold]Match:[/] \"{reference.Match}\""),
+                    new Markup($"[bold]Timestamp:[/] {reference.Timestamp}")
+                )
+            ));
+        }
+
+        var panel = new Panel(new Rows(renderList))
+        {
+            Header = new PanelHeader($"[bold]{entry.Name}[/] ({entry.LicenseId})"),
+            Border = BoxBorder.Rounded
+        };
+
+        AnsiConsole.Write(panel);  
     }
+
+    private static string GetStatusColorTag(bool condition, bool reverse = false) => condition ^ reverse ? "[green]" : "[red]";
 }

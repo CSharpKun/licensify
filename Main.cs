@@ -3,12 +3,12 @@ using Microsoft.Extensions.Hosting;
 using System.Text.Json.Serialization;
 using System.Text.Json;
 using System.Reflection;
-using Licensify;
+using Licensify.Services;
 using DotMake.CommandLine;
 using Licensify.Commands;
 using System.Net.Http.Headers;
-
-var builder = Host.CreateApplicationBuilder(args);
+using Licensify;
+using System.Net.Sockets;
 
 Cli.Ext.ConfigureServices(services =>
     services.AddSingleton<JsonSerializerOptions>(_ => new()
@@ -18,6 +18,7 @@ Cli.Ext.ConfigureServices(services =>
         ReferenceHandler = ReferenceHandler.IgnoreCycles,
         TypeInfoResolver = LicensifyJsonSerializerContext.Default
     })
+    .AddSingleton<RootCommand>()
     .AddSingleton<ILicenseDatabase, JsonLicenseDatabase>()
     .AddHttpClient("spdx", client =>
     {
@@ -26,6 +27,7 @@ Cli.Ext.ConfigureServices(services =>
         var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
         var clientInfo = new ProductInfoHeaderValue("Licensify", version);
         client.DefaultRequestHeaders.UserAgent.Add(clientInfo);
+        client.DefaultRequestHeaders.AcceptEncoding.Clear();
     })
 );
 

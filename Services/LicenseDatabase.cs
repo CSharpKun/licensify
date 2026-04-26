@@ -1,9 +1,11 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Text.Json;
+using Licensify.Commands;
 using Microsoft.Extensions.Logging;
+using Spectre.Console;
 
-namespace Licensify;
+namespace Licensify.Services;
 
 public interface ILicenseDatabase
 {
@@ -13,7 +15,7 @@ public interface ILicenseDatabase
 
 [UnconditionalSuppressMessage("Trimming", "IL2026")]
 [UnconditionalSuppressMessage("AOT", "IL3050")]
-public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions options, ILogger<JsonLicenseDatabase> logger) : ILicenseDatabase
+public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, RootCommand root) : ILicenseDatabase
 {
     private static string ApplicationFolder { get; } = 
     Path.Combine(
@@ -33,8 +35,9 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
             "manifestCache.json"
         );
 
-    private bool IsErrorEnabled { get; } = logger.IsEnabled(LogLevel.Error);
     private const string SPDX_LICENSES_LIST = "licenses.json";
+    private readonly HttpClient _client = httpFactory.CreateClient("spdx");
+    private readonly bool _verbose = true; //root.Verbose;
 
     public async Task<LicenseEntry?> GetLicense(string licenseId, CancellationToken token = default)
     {
@@ -48,12 +51,11 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
         }
         catch (HttpRequestException ex)
         {
-            logger.LogError(ex, "message");
+            AnsiConsole.WriteException(ex);
         }
 
         if (!TryGetFromCache(LicensesCacheFile, out dict))
         {
-            if (IsErrorEnabled) logger.LogError("d");
             dict = [];
         }
 
@@ -64,26 +66,16 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
             return license;
         }
 
-        if ((dict?.TryGetValue(licenseId, out license) ?? false) && logger.IsEnabled(LogLevel.Information))
-        {
-            logger.LogInformation("Using local copy of license {License}", licenseId);
-        }
+        var gotFromDict = dict?.TryGetValue(licenseId, out license) ?? false;
+
+        if (gotFromDict && _verbose) AnsiConsole.Markup("[grey]Using local copy of the license {License}[/]", licenseId);
 
         return license;
     }
 
     public async Task<LicenseListManifest?> GetLicensesList(CancellationToken token)
     {
-        LicenseListManifest? manifest = default;
-
-        try
-        {
-            manifest = await GetJsonRequest<LicenseListManifest>(SPDX_LICENSES_LIST, token);   
-        }
-        catch (HttpRequestException ex)
-        {
-            logger.LogError(ex, "message");
-        }
+        var manifest = await GetJsonRequest<LicenseListManifest>(SPDX_LICENSES_LIST, token);   
 
         if (manifest is not null)
         {
@@ -91,10 +83,9 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
             return manifest;
         }
 
-        if (TryGetFromCache(ManifestCacheFile, out manifest) && logger.IsEnabled(LogLevel.Information))
-        {
-            logger.LogInformation("Using local copy of manifest: {Version}", manifest?.Version);
-        }
+        var gotFromCache = TryGetFromCache(ManifestCacheFile, out manifest);
+
+        if (gotFromCache && _verbose) AnsiConsole.Markup("[grey]Using local copy of the licenses' list[/]");
 
         return manifest;
     }
@@ -102,6 +93,11 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
     private bool TryGetFromCache<T>(string filePath, out T? result)
     {
         Directory.CreateDirectory(ApplicationFolder);
+        if (!File.Exists(filePath))
+        {
+            result = default;
+            return false;
+        } 
         var json = File.ReadAllText(filePath);
 
         try
@@ -109,9 +105,9 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
             result = JsonSerializer.Deserialize<T>(json, options); 
             return true;
         }   
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            if (IsErrorEnabled) logger.LogError(ex, "message"); // todo
+            File.Delete(filePath);
             result = default;
             return false;
         }   
@@ -119,24 +115,35 @@ public class JsonLicenseDatabase(HttpClient client, JsonSerializerOptions option
 
     private void WriteToCache(string filePath, object obj) => File.WriteAllText(filePath, JsonSerializer.Serialize(obj, options));
 
-    private async Task<T> GetJsonRequest<T>(string url, CancellationToken token)
+    private async Task<T?> GetJsonRequest<T>(string url, CancellationToken token)
     {
-        var response = await client.GetAsync(url, token);
+        HttpResponseMessage? response = null;
+        try
+        {
+            response = await _client.GetAsync(url);    
+        }
+        catch (TaskCanceledException ex) when (!token.IsCancellationRequested)
+        {
+            if (_verbose)
+            {
+                AnsiConsole.Markup($"[red]Fetch to url {url} failed because of the timeout[/]");
+                AnsiConsole.WriteException(ex);  
+            } 
+            return default;
+        }
+
+        if (response is null) return default;
 
         if (!response.IsSuccessStatusCode)
         {
-            if (IsErrorEnabled) logger.LogError("Failed to fetch {Url}", url);
-            throw new HttpRequestException();
+            if (_verbose) AnsiConsole.Markup("[red]Failed to fetch {Url}[/]", url);
+            return default;
         }
         
         var responseJson = await response.Content.ReadAsStringAsync(token);
         var data = JsonSerializer.Deserialize<T>(responseJson, options);
 
-        if (data is null)
-        {
-            if (IsErrorEnabled) logger.LogError("Failed to deserialize data from {Url} with contents {Contents}", url, responseJson);
-            throw new JsonException();
-        }
+        if (data is null && _verbose) AnsiConsole.Markup("[red]Failed to deserialize data from {Url} with contents {Contents}[/]", url, responseJson);
 
         return data;
     }
