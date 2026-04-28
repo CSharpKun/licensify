@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Licensify;
@@ -50,7 +51,7 @@ public record CrossRef(
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LicenseListManifest))]
 [JsonSerializable(typeof(LicenseListEntry))]
-[JsonSerializable(typeof(Dictionary<string, object>))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
 [JsonSerializable(typeof(LicenseEntry))]
 [JsonSerializable(typeof(CrossRef))]
 public partial class LicensifyJsonSerializerContext : JsonSerializerContext;

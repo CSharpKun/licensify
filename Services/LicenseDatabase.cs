@@ -28,24 +28,27 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         "database.json"
     );
 
-    // private const string SPDX_LICENSES_LIST = "licenses.json";
-
     public async Task<T?> GetData<T>(string url, string clientName = "github", CancellationToken token = default) where T : class
     {
         var tName = typeof(T).Name;
-        Dictionary<string, object>? cacheResult = [];
+        Dictionary<string, JsonElement>? cacheResult = [];
 
-        if (!settings.ForceNoCache && TryGetFromCache(out cacheResult) && cacheResult?[tName] is T)
+        if (!settings.ForceNoCache && TryGetFromCache(out cacheResult) && (cacheResult?.TryGetValue(tName, out var json) ?? false))
         {
-            if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Using local copy of {tName}[/]");
-            return cacheResult[tName] as T;
+            var deserialized = json.Deserialize<T>(options);
+            if (deserialized is not null)
+            {
+                if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Using local copy of {tName}[/]");
+                return deserialized;    
+            }
+            if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Couldn't deserialize local copy of {tName}[/]");
         }
 
         var fetchResult = await GetJsonRequest<T>(url, clientName, token);
         if (fetchResult is null) return fetchResult;
 
         cacheResult ??= [];
-        cacheResult[tName] = fetchResult;
+        cacheResult[tName] = JsonSerializer.SerializeToElement(fetchResult, options);
         WriteToCache(cacheResult);
         return fetchResult;
     }
@@ -65,10 +68,16 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         try
         {
             result = JsonSerializer.Deserialize<T>(json, options); 
+            if (result is null && settings.Verbose) AnsiConsole.MarkupLine("[grey]Couldn't parse cache JSON[/]");
             return true;
         }   
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            if (settings.Verbose) 
+            { 
+                AnsiConsole.MarkupLine("[grey]Couldn't parse cache JSON[/]");
+                AnsiConsole.WriteException(ex);
+            }
             File.Delete(DatabaseFile);
             result = default;
             return false;
