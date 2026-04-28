@@ -7,11 +7,11 @@ namespace Licensify.Commands;
 [CliCommand(
     Description = "Lists all licenses in a table."
 )]
-public class ListCommand(ILicenseDatabase database)
+public class ListCommand(ILicenseDatabase database, CliGlobalSettings settings)
 {
     public async Task RunAsync()
     {
-        var manifest = await database.GetLicensesList();
+        var manifest = await database.GetData<LicenseListManifest>("licenses.json", settings.SpdxRepo);
 
         if (manifest is null)
         {

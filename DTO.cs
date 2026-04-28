@@ -4,7 +4,8 @@ namespace Licensify;
 
 public record CliGlobalSettings(
     bool Verbose,
-    bool ForceNoCache
+    bool ForceNoCache,
+    string SpdxRepo
 );
 
 public record LicenseListManifest(
@@ -49,7 +50,7 @@ public record CrossRef(
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LicenseListManifest))]
 [JsonSerializable(typeof(LicenseListEntry))]
-[JsonSerializable(typeof(Dictionary<string, LicenseEntry>))]
+[JsonSerializable(typeof(Dictionary<string, object>))]
 [JsonSerializable(typeof(LicenseEntry))]
 [JsonSerializable(typeof(CrossRef))]
 public partial class LicensifyJsonSerializerContext : JsonSerializerContext;

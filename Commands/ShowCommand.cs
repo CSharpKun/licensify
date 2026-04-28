@@ -10,31 +10,20 @@ namespace Licensify.Commands;
     Description = "Shows information about specified license.",
     Alias = "get"
 )]
-public class ShowCommand(ILicenseDatabase database)
+public class ShowCommand(ILicenseDatabase database, CliGlobalSettings settings)
 {
     [CliArgument(Description = "License's short id.", Required = true)]
     public string LicenseId { get; set; } = null!;
 
     public async Task RunAsync()
     {
-        LicenseEntry? entry = null;
+        var entry = await database.GetData<LicenseEntry>(LicenseId + ".json", settings.SpdxRepo);  
 
-        try
+        if (entry is null)
         {
-            entry = await database.GetLicense(LicenseId);  
-        } 
-        catch (HttpRequestException)
-        {
-            AnsiConsole.Markup($"Couldn't find license");
+            AnsiConsole.Markup($"[bold red]Couldn't get {LicenseId} license. Check your internet connection.[/]");
             return;
         }
-        catch (JsonException)
-        {
-            AnsiConsole.Markup($"Couldn't parse license");
-            return;
-        }
-
-        if (entry is null) return;   
 
         var renderList = new List<IRenderable>
         {

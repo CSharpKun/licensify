@@ -15,14 +15,8 @@ public class RootCommand
     public bool NoCache { get; set; }
 
     [CliOption(
-        Description = "Custom SPDX repository URL",
-        Group = "Repository"
-    )]
-    public Uri? CustomRepo { get; set; }
-
-    [CliOption(
-        Description = "Use SPDX official repo",
-        Group = "Repository"
-    )]
-    public bool UseSPDX { get; set; }
+        Description = "Custom SPDX repository URL [github, spdx, (your url)]",
+        ValidationPattern = @"^(?:github|spdx|(?:http|https):\/\/[^\s]+)$", ValidationMessage = "You must enter either Url, 'spdx' or 'github'"
+    )] 
+    public string SpdxRepo { get; set; } = "github";
 }
