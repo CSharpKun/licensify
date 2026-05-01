@@ -7,15 +7,15 @@ namespace Licensify.Commands;
 [CliCommand(
     Description = "Lists all licenses in a table."
 )]
-public class ListCommand(ILicenseDatabase database, CliGlobalSettings settings)
+public class ListCommand(ILicenseDatabase database)
 {
     public async Task RunAsync()
     {
-        var manifest = await database.GetData<LicenseListManifest>("licenses.json", settings.SpdxRepo);
+        var manifest = await database.GetData<LicenseListManifest>("licenses.json");
 
         if (manifest is null)
         {
-            AnsiConsole.Markup("[bold red]Couldn't get list of licenses. Check your internet connection.[/]");
+            AnsiConsole.MarkupLine("[bold red]Couldn't get list of licenses. Check your internet connection.[/]");
             return;
         }
 

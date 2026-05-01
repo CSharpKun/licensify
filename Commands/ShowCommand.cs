@@ -1,4 +1,3 @@
-using System.Text.Json;
 using DotMake.CommandLine;
 using Licensify.Services;
 using Spectre.Console;
@@ -10,18 +9,18 @@ namespace Licensify.Commands;
     Description = "Shows information about specified license.",
     Alias = "get"
 )]
-public class ShowCommand(ILicenseDatabase database, CliGlobalSettings settings)
+public class ShowCommand(ILicenseDatabase database)
 {
     [CliArgument(Description = "License's short id.", Required = true)]
     public string LicenseId { get; set; } = null!;
 
     public async Task RunAsync()
     {
-        var entry = await database.GetData<LicenseEntry>(LicenseId + ".json", settings.SpdxRepo);  
+        var entry = await database.GetData<LicenseEntry>(LicenseId + ".json");  
 
         if (entry is null)
         {
-            AnsiConsole.Markup($"[bold red]Couldn't get {LicenseId} license. Check your internet connection.[/]");
+            AnsiConsole.MarkupLine($"[bold red]Couldn't get {LicenseId} license. Check your internet connection.[/]");
             return;
         }
 

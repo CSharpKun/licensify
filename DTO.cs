@@ -1,12 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Licensify.Services;
+using YamlDotNet.Serialization;
 
 namespace Licensify;
 
 public record CliGlobalSettings(
     bool Verbose,
-    bool ForceNoCache,
-    string SpdxRepo
+    bool ForceNoCache
 );
 
 public record LicenseListManifest(
@@ -55,3 +56,9 @@ public record CrossRef(
 [JsonSerializable(typeof(LicenseEntry))]
 [JsonSerializable(typeof(CrossRef))]
 public partial class LicensifyJsonSerializerContext : JsonSerializerContext;
+
+[YamlStaticContext]
+[YamlSerializable(typeof(RootSettings))]
+[YamlSerializable(typeof(UserSettings))]
+[YamlSerializable(typeof(SpdxSettings))]
+public partial class LicensifyYamlContext : StaticContext;

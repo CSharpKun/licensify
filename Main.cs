@@ -8,13 +8,12 @@ using DotMake.CommandLine;
 using Licensify.Commands;
 using Licensify.Services;
 using Licensify;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 var rootCommand = Cli.Parse<RootCommand>().Bind<RootCommand>();
-var spdxRepoHttp = rootCommand.SpdxRepo.ToLower();
 
-if (Uri.TryCreate(rootCommand.SpdxRepo, UriKind.Absolute, out Uri? result)) spdxRepoHttp = result.Host;
-
-CliGlobalSettings globalSettings = new(rootCommand.Verbose, rootCommand.NoCache, spdxRepoHttp);
+CliGlobalSettings globalSettings = new(rootCommand.Verbose, rootCommand.NoCache);
 
 Cli.Ext.ConfigureServices(services =>
 {
@@ -26,7 +25,21 @@ Cli.Ext.ConfigureServices(services =>
         TypeInfoResolver = LicensifyJsonSerializerContext.Default
     })
     .AddSingleton(globalSettings)
-    .AddSingleton<ILicenseDatabase, JsonLicenseDatabase>();
+    .AddSingleton<ILicenseDatabase, JsonLicenseDatabase>()
+    .AddSingleton<LicensifyYamlContext>()
+    .AddSingleton(services =>
+    {
+        return new StaticSerializerBuilder(services.GetRequiredService<LicensifyYamlContext>())
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .Build();
+    })
+    .AddSingleton(services =>
+    {
+        return new StaticDeserializerBuilder(services.GetRequiredService<LicensifyYamlContext>())
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .Build();
+    })
+    .AddSingleton<ILicenseParser, LicenseParser>();
 
     var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3);
     var clientInfo = new ProductInfoHeaderValue("Licensify", version);
@@ -45,6 +58,7 @@ Cli.Ext.ConfigureServices(services =>
         client.DefaultRequestHeaders.UserAgent.Add(clientInfo);
     });
 
+    /*
     if (result is null) return;
 
     services.AddHttpClient(result.Host, client =>
@@ -53,7 +67,7 @@ Cli.Ext.ConfigureServices(services =>
         client.BaseAddress = result;
         client.DefaultRequestHeaders.UserAgent.Add(clientInfo);
     });
+    */
 });
 
 await Cli.RunAsync<RootCommand>();
-

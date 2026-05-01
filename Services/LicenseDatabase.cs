@@ -1,7 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
-using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Spectre.Console;
 
@@ -9,12 +7,12 @@ namespace Licensify.Services;
 
 public interface ILicenseDatabase
 {
-    public Task<T?> GetData<T>(string url, string clientName = "github", CancellationToken token = default) where T : class;
+    public Task<T?> GetData<T>(string name, CancellationToken token = default) where T : class;
 }
 
 [UnconditionalSuppressMessage("Trimming", "IL2026")]
 [UnconditionalSuppressMessage("AOT", "IL3050")]
-public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, CliGlobalSettings settings) : ILicenseDatabase
+public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, CliGlobalSettings globalFlags, ISettingsDatabase settings) : ILicenseDatabase
 {
     private static string ApplicationFolder { get; } = 
     Path.Combine(
@@ -28,23 +26,27 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         "database.json"
     );
 
-    public async Task<T?> GetData<T>(string url, string clientName = "github", CancellationToken token = default) where T : class
+    public async Task<T?> GetData<T>(string name, CancellationToken token = default) where T : class
     {
-        var tName = typeof(T).Name;
+        var tName = typeof(T).Name + "_" + name;
         Dictionary<string, JsonElement>? cacheResult = [];
 
-        if (!settings.ForceNoCache && TryGetFromCache(out cacheResult) && (cacheResult?.TryGetValue(tName, out var json) ?? false))
+        if (!globalFlags.ForceNoCache && TryGetFromCache(out cacheResult) && (cacheResult?.TryGetValue(tName, out var json) ?? false))
         {
             var deserialized = json.Deserialize<T>(options);
             if (deserialized is not null)
             {
-                if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Using local copy of {tName}[/]");
+                if (globalFlags.Verbose) AnsiConsole.MarkupLine($"[grey]Using local copy of {tName}[/]");
                 return deserialized;    
             }
-            if (settings.Verbose) AnsiConsole.MarkupLine($"[grey]Couldn't deserialize local copy of {tName}[/]");
+            if (globalFlags.Verbose) AnsiConsole.MarkupLine($"[grey]Couldn't deserialize local copy of {tName}[/]");
         }
 
-        var fetchResult = await GetJsonRequest<T>(url, clientName, token);
+        var repo = settings.Settings.Spdx.Repo ?? "github";
+
+        var url = repo == "github" && name != "licenses.json" ? "details/" + name : name;
+
+        var fetchResult = await GetJsonRequest<T>(url, repo, token);
         if (fetchResult is null) return fetchResult;
 
         cacheResult ??= [];
@@ -68,12 +70,12 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         try
         {
             result = JsonSerializer.Deserialize<T>(json, options); 
-            if (result is null && settings.Verbose) AnsiConsole.MarkupLine("[grey]Couldn't parse cache JSON[/]");
+            if (result is null && globalFlags.Verbose) AnsiConsole.MarkupLine("[grey]Couldn't parse cache JSON[/]");
             return true;
         }   
         catch (JsonException ex)
         {
-            if (settings.Verbose) 
+            if (globalFlags.Verbose) 
             { 
                 AnsiConsole.MarkupLine("[grey]Couldn't parse cache JSON[/]");
                 AnsiConsole.WriteException(ex);
@@ -96,15 +98,23 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
         }
         catch (TaskCanceledException ex) when (!token.IsCancellationRequested)
         {
-            if (settings.Verbose)
+            if (globalFlags.Verbose)
             {
                 AnsiConsole.MarkupLine($"[red]Fetch to url {url} failed because of the timeout[/]");
                 AnsiConsole.WriteException(ex);  
             } 
         }
+        catch (HttpRequestException ex)
+        {
+            if (globalFlags.Verbose)
+            {
+                AnsiConsole.MarkupLine($"[red]Failed to fetch data from url {url}[/]");
+                AnsiConsole.WriteException(ex); 
+            }
+        }
         catch (JsonException ex)
         {
-            if (settings.Verbose)
+            if (globalFlags.Verbose)
             {
                 AnsiConsole.MarkupLine($"[red]Failed to deserialize data from url {url}[/]");
                 AnsiConsole.WriteException(ex); 

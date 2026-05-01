@@ -14,9 +14,10 @@ public class RootCommand
     [CliOption(Description = "Force download and update for operation")]
     public bool NoCache { get; set; }
 
+    /*
     [CliOption(
         Description = "Custom SPDX repository URL [github, spdx, (your url)]",
         ValidationPattern = @"^(?:github|spdx|(?:http|https):\/\/[^\s]+)$", ValidationMessage = "You must enter either Url, 'spdx' or 'github'"
     )] 
-    public string SpdxRepo { get; set; } = "github";
+    public string SpdxRepo { get; set; } = "github"; */
 }
