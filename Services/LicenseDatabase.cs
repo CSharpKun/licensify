@@ -12,7 +12,7 @@ public interface ILicenseDatabase
 
 [UnconditionalSuppressMessage("Trimming", "IL2026")]
 [UnconditionalSuppressMessage("AOT", "IL3050")]
-public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, CliGlobalSettings globalFlags, ISettingsDatabase settings) : ILicenseDatabase
+public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerOptions options, CliGlobalSettings globalFlags, IConfigService settings) : ILicenseDatabase
 {
     private static string ApplicationFolder { get; } = 
     Path.Combine(
@@ -42,7 +42,7 @@ public class JsonLicenseDatabase(IHttpClientFactory httpFactory, JsonSerializerO
             if (globalFlags.Verbose) AnsiConsole.MarkupLine($"[grey]Couldn't deserialize local copy of {tName}[/]");
         }
 
-        var repo = settings.Settings.Spdx.Repo ?? "github";
+        var repo = settings.Settings["spdx.repo"] ?? "github";
 
         var url = repo == "github" && name != "licenses.json" ? "details/" + name : name;
 

@@ -13,7 +13,7 @@ public interface ILicenseParser
     public string Parse(string license);
 }
 
-public partial class LicenseParser(CliGlobalSettings globalFlags, ISettingsDatabase settings) : ILicenseParser
+public partial class LicenseParser(CliGlobalSettings globalFlags, IConfigService settings) : ILicenseParser
 {
     public Func<string, bool>? GetOptionalParts { get; set; }
     public Func<string>? GetName { get; set; }
@@ -44,8 +44,8 @@ public partial class LicenseParser(CliGlobalSettings globalFlags, ISettingsDatab
         switch (parsedVariable.Name)
         {
             case "copyright":
-                var name = settings.Settings.User.Name ?? GetName?.Invoke() ?? throw new NullReferenceException();
-                var surname = settings.Settings.User.Name ?? GetName?.Invoke() ?? "";
+                var name = settings.Settings["user.name"] ?? GetName?.Invoke() ?? throw new NullReferenceException();
+                var surname = settings.Settings["user.surname"] ?? GetName?.Invoke() ?? "";
                 var currentYear = DateTime.Now.Year;
                 return string.Concat("Copyright (c) ", currentYear, " ", name, " ", surname, "  ");
         }

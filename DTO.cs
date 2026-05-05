@@ -58,7 +58,5 @@ public record CrossRef(
 public partial class LicensifyJsonSerializerContext : JsonSerializerContext;
 
 [YamlStaticContext]
-[YamlSerializable(typeof(RootSettings))]
-[YamlSerializable(typeof(UserSettings))]
-[YamlSerializable(typeof(SpdxSettings))]
+[YamlSerializable(typeof(Dictionary<string, Dictionary<string, string>>))]
 public partial class LicensifyYamlContext : StaticContext;
